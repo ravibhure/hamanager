@@ -1,6 +1,6 @@
 = HAManager
 
-== DESCRIPTION
+= DESCRIPTION
 
 HAManager is an interactive command line tiny tool to setup and manage the HAProxy configuration.
 
@@ -17,12 +17,12 @@ Also, It supports various modes for detailed statistics of all configured proxie
 
 == Prerequisites
   
-= Pakcages
+=== Pakcages
 
       * yum install keepalived haproxy
       * yum install pcre-devel 
      
-= System enviroment setup
+=== System enviroment setup
 
       Note: This tool require root owner permission, sudoer your user.
 
@@ -32,7 +32,9 @@ Also, It supports various modes for detailed statistics of all configured proxie
 == Example
 
    Its just simple to use, similar functionality of our own custom haproxy configuration manager tool - [hamanager] (https://github.com/ravibhure/hamanager.git)
+
    To check server (all) health status - i.e. is already under maintenace mode or up
+
       [root@host75vm1 hamanager]# hamanager wwwtest
       host75vm1
       We are running in - FDC
@@ -59,11 +61,11 @@ Also, It supports various modes for detailed statistics of all configured proxie
      REAL:host75vm2:10.0.1.211:80 ===> UP
 
 
-== Work in Progress
+= Work in Progress
 
 HAManager are a work in progress, expect more documentation and examples in the near future.
 
-== Maintener 
+= Maintener 
 
 Ravi Bhure <ravibhure@gmail.com> + (AnyOne who like to contribute)
 
