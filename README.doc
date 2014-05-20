@@ -1,0 +1,82 @@
+= HAManager
+
+== DESCRIPTION
+
+HAManager is an interactive command line tiny tool to setup and manage the HAProxy configuration.
+
+This allows administrators to control the given haproxy instance (such as generate haproxy configuration, add new backend server or remove server from rotation.)
+
+Also, It supports various modes for detailed statistics of all configured proxies and services in near realtime. In addition, it features an interactive CLI for the haproxy unix socket. This allows administrators to control the given haproxy instance (change server weight, put servers into maintenance mode, ...) directly out of hamanager and check_mk the results immediately.
+
+== Features
+
+  Following features are supported currently, will add more as required
+      * disable server - Put server into maintenance mode
+      * enable server - Remove server from maintenance mode
+      * health check - Check either server (all) is under maintenace mode or up
+
+== Prerequisites
+  
+= Pakcages
+
+      * yum install keepalived haproxy
+      * yum install pcre-devel 
+     
+= System enviroment setup
+
+      Note: This tool require root owner permission, sudoer your user.
+
+      * echo 'export PATH=$PATH:.' >> ~/.bashrc
+      Note: Setting env is require only in current version, we will remove this dependancies in future release.
+
+== Example
+
+   Its just simple to use, similar functionality of our own custom haproxy configuration manager tool - [hamanager] (https://github.com/ravibhure/hamanager.git)
+   To check server (all) health status - i.e. is already under maintenace mode or up
+      [root@host75vm1 hamanager]# hamanager wwwtest
+      host75vm1
+      We are running in - FDC
+      wwwtest >  status host75vm2
+      REAL:host75vm2:10.0.1.211:80===>UP
+      wwwtest >  status all
+      FRONTEND===>OPEN
+      REAL:host75vm1:10.0.1.210:80===>UP
+     REAL:host75vm2:10.0.1.211:80===>UP
+     BACKEND===>UP
+
+   * Add server into maintenance mode
+     wwwtest >  oos host75vm2
+     ----------------------------------
+     Do you want to disable host75vm2? (y/n)
+     ----------------------------------
+     REAL:host75vm2:10.0.1.211:80 ===> MAINT
+
+   * Remove server from maintenance mode
+     wwwtest >  is host75vm2
+     ----------------------------------
+     Do you want to enable REAL:host75vm2:10.0.1.211:80? (y/n)
+     ----------------------------------
+     REAL:host75vm2:10.0.1.211:80 ===> UP
+
+
+== Work in Progress
+
+HAManager are a work in progress, expect more documentation and examples in the near future.
+
+== Maintener 
+
+Ravi Bhure <ravibhure@gmail.com> + (AnyOne who like to contribute)
+
+= ADDITIONAL RESOURCES
+
+*  http://haproxy.1wt.eu/download/1.4/doc/configuration.txt
+
+*  http://www.dest-unreach.org/socat/
+
+
+= LICENSE
+
+* This software can be used for free unless I meet you, then you owe me drink and lunch.
+
+<b>HAManager</b>
+
