@@ -2,11 +2,7 @@
 
 = DESCRIPTION
 
-HAManager is an interactive command line tiny tool to setup and manage the HAProxy configuration.
-
-This allows administrators to control the given haproxy instance (such as generate haproxy configuration, add new backend server or remove server from rotation.)
-
-Also, It supports various modes for detailed statistics of all configured proxies and services in near realtime. In addition, it features an interactive CLI for the haproxy unix socket. This allows administrators to control the given haproxy instance (change server weight, put servers into maintenance mode, ...) directly out of hamanager and check_mk the results immediately.
+HAManager is an interactive command line tiny tool to play and administrate haproxy on using powerful socket.
 
 == Features
 
@@ -14,71 +10,66 @@ Also, It supports various modes for detailed statistics of all configured proxie
       * disable server - Put server into maintenance mode
       * enable server - Remove server from maintenance mode
       * health check - Check either server (all) is under maintenace mode or up
+      * set weight - Set weight for host.
 
 == Prerequisites
   
-=== Pakcages
-
-      * yum install keepalived haproxy
-      * yum install pcre-devel 
+      * pip install -r requirements.txt
      
-=== System enviroment setup
-
-      Note: This tool require root owner permission, sudoer your user.
-
-      * echo 'export PATH=$PATH:.' >> ~/.bashrc
-      Note: Setting env is require only in current version, we will remove this dependancies in future release.
-
 == Example
 
-   Its just simple to use, similar functionality of our own custom haproxy configuration manager tool - [hamanager] (https://github.com/ravibhure/hamanager.git)
+   Its just simple to use, similar functionality of ansible custom haproxy module  - {haproxy}[https://github.com/ansible/ansible-modules-extras/blob/devel/network/haproxy.py]
 
-   To check server (all) health status - i.e. is already under maintenace mode or up
 
-      [root@host75vm1 hamanager]# hamanager wwwtest
-      host75vm1
-      We are running in - FDC
-      wwwtest >  status host75vm2
-      REAL:host75vm2:10.0.1.211:80===>UP
-      wwwtest >  status all
-      FRONTEND===>OPEN
-      REAL:host75vm1:10.0.1.210:80===>UP
-     REAL:host75vm2:10.0.1.211:80===>UP
-     BACKEND===>UP
+  # checks the health of the server
+  hamanager --state health --host {{hostname}}
 
-   * Add server into maintenance mode
-     wwwtest >  oos host75vm2
-     ----------------------------------
-     Do you want to disable host75vm2? (y/n)
-     ----------------------------------
-     REAL:host75vm2:10.0.1.211:80 ===> MAINT
+  # disable server in 'www' backend pool
+  hamanager --state disabled --host {{hostname}} --backend www
 
-   * Remove server from maintenance mode
-     wwwtest >  is host75vm2
-     ----------------------------------
-     Do you want to enable REAL:host75vm2:10.0.1.211:80? (y/n)
-     ----------------------------------
-     REAL:host75vm2:10.0.1.211:80 ===> UP
+  # disable server without backend pool name (apply to all available backend pool)
+  hamanager --state disabled --host {{hostname}}
+
+  # disable server, provide socket file
+  hamanager --state disabled --host {{hostname}} --socket /var/run/haproxy.sock --backend www
+
+  # disable server, provide socket file, wait until status reports in maintenance
+  hamanager --state disabled --host {{hostname}} --socket /var/run/haproxy.sock --backend www --wait yes
+
+  # disable backend server in 'www' backend pool and drop open sessions to it
+  hamanager --state disabled --host {{hostname}} --backend www --socket /var/run/haproxy.sock --shutdown_sessions true
+
+  # enable server in 'www' backend pool
+  hamanager --state enabled --host {{hostname}} --backend www
+
+  # enable server in 'www' backend pool wait until healthy
+  hamanager --state enabled --host {{hostname}} --backend www --wait yes
+
+  # enable server in 'www' backend pool wait until healthy. Retry 10 times with intervals of 5 seconds to retrieve the health
+  hamanager --state enabled --host {{hostname}} --backend www --wait yes --wait_retries 10 --wait_interval 5
+
+  # enable server in 'www' backend pool with change server(s) weight
+  hamanager --state enabled --host {{hostname}} --socket /var/run/haproxy.sock --weight 10 --backend www
 
 
 = Work in Progress
 
 HAManager are a work in progress, expect more documentation and examples in the near future.
 
+= ADDITIONAL RESOURCES
+
+*  http://haproxy.1wt.eu/download/1.5/doc/configuration.txt#Unix Socket commands
+
 = Maintener 
 
 Ravi Bhure <ravibhure@gmail.com> + (AnyOne who like to contribute)
 
-= ADDITIONAL RESOURCES
+= BUGS / FIXES
 
-*  http://haproxy.1wt.eu/download/1.4/doc/configuration.txt
-
-*  http://www.dest-unreach.org/socat/
-
+* Pull requests welcome via github.
 
 = LICENSE
 
 * This software can be used for free unless I meet you, then you owe me drink and lunch.
 
 <b>HAManager</b>
-

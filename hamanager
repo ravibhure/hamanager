@@ -1,0 +1,307 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+# (c) 2016, Ravi Bhure <ravibhure@gmail.com>
+#
+
+EXAMPLE = '''
+# checks the health of the server
+hamanager --state health --host {{hostname}}
+
+# disable server in 'www' backend pool
+hamanager --state disabled --host {{hostname}} --backend www
+
+# disable server without backend pool name (apply to all available backend pool)
+hamanager --state disabled --host {{hostname}}
+
+# disable server, provide socket file
+hamanager --state disabled --host {{hostname}} --socket /var/run/haproxy.sock --backend www
+
+# disable server, provide socket file, wait until status reports in maintenance
+hamanager --state disabled --host {{hostname}} --socket /var/run/haproxy.sock --backend www --wait yes
+
+# disable backend server in 'www' backend pool and drop open sessions to it
+hamanager --state disabled --host {{hostname}} --backend www --socket /var/run/haproxy.sock --shutdown_sessions true
+
+# enable server in 'www' backend pool
+hamanager --state enabled --host {{hostname}} --backend www
+
+# enable server in 'www' backend pool wait until healthy
+hamanager --state enabled --host {{hostname}} --backend www --wait yes
+
+# enable server in 'www' backend pool wait until healthy. Retry 10 times with intervals of 5 seconds to retrieve the health
+hamanager --state enabled --host {{hostname}} --backend www --wait yes --wait_retries 10 --wait_interval 5
+
+# enable server in 'www' backend pool with change server(s) weight
+hamanager --state enabled --host {{hostname}} --socket /var/run/haproxy.sock --weight 10 --backend www
+
+author: "Ravi Bhure (@ravibhure)"
+'''
+
+import sys
+import socket
+import csv
+import time
+import argparse
+import json
+
+
+authoremail='ravibhure@gmail.com'
+DEFAULT_SOCKET_LOCATION="/var/run/haproxy.sock"
+RECV_SIZE = 1024
+ACTION_CHOICES = ['enabled', 'disabled', 'health']
+WAIT_RETRIES=25
+WAIT_INTERVAL=5
+
+######################################################################
+class TimeoutException(Exception):
+  pass
+
+class HAProxy(object):
+    """
+    Used for communicating with HAProxy through its local UNIX socket interface.
+    Perform common tasks in Haproxy related to enable server and
+    disable server.
+
+    The complete set of external commands Haproxy handles is documented
+    on their website:
+
+    http://haproxy.1wt.eu/download/1.5/doc/configuration.txt#Unix Socket commands
+    """
+
+    def __init__(self):
+
+        #self.parser = argparse.ArgumentParser(add_help=False, usage=EXAMPLE, description="Report for your findings", epilog="To know more, write to: %s\n" % authoremail)
+        self.parser = argparse.ArgumentParser(description="Report for your findings", epilog="To know more, write to: %s\n" % authoremail)
+
+        # haproxy
+        self.parser.add_argument("--state", help="State",required=True,choices=ACTION_CHOICES)
+        self.parser.add_argument("--host", help="Backend hostserver",required=True,default=None)
+        self.parser.add_argument("--backend", help="Backend haproxy pool name",required=False,default=None)
+        self.parser.add_argument("--weight", help="Weight for backend host",required=False,default=None)
+        self.parser.add_argument("--socket", help="Socket Path",required=False,default=DEFAULT_SOCKET_LOCATION)
+        self.parser.add_argument("--shutdown_sessions", help="Shutdown open sessions",required=False,default=False)
+        self.parser.add_argument("--wait", help="Wait till action completes",required=False,default=False,type=bool)
+        self.parser.add_argument("--wait_retries", help="Wait retries",required=False,default=WAIT_RETRIES,type=int)
+        self.parser.add_argument("--wait_interval", help="Wait Interval",required=False,default=WAIT_INTERVAL,type=float)
+        self.parser.parse_args(namespace=self)
+
+        self.command_results = []
+        self.status_servers = []
+        self.status_weights = []
+        self.previous_weights = []
+        self.previous_states  = []
+        self.current_states   = []
+        self.current_weights  = []
+
+        if not self.socket:
+            self.fail_json(msg="unable to locate haproxy socket")
+        self.act()
+
+
+    def execute(self, cmd, timeout=200, capture_output=True):
+        """
+        Executes a HAProxy command by sending a message to a HAProxy's local
+        UNIX socket and waiting up to 'timeout' milliseconds for the response.
+        """
+        #print(cmd)
+
+        self.client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.client.connect(self.socket)
+        self.client.sendall('%s\n' % cmd)
+        result = ''
+        buf = ''
+        buf = self.client.recv(RECV_SIZE)
+        while buf:
+            result += buf
+            buf = self.client.recv(RECV_SIZE)
+        if capture_output:
+            self.command_results = result.strip()
+        self.client.close()
+        return result
+
+    def wait_until_status(self, pxname, svname, status):
+        """
+        Wait for a service to reach the specified status. Try RETRIES times
+        with INTERVAL seconds of sleep in between. If the service has not reached
+        the expected status in that time, the module will fail. If the service was 
+        not found, the module will fail.
+        """
+        for i in range(1, self.wait_retries):
+            data = self.execute('show stat', 200, False).lstrip('# ')
+            r = csv.DictReader(data.splitlines())
+            found = False
+            for row in r:
+                if row['pxname'] == pxname and row['svname'] == svname:
+                    found = True
+                    if row['status'] == status:
+                        self.status_servers = status
+                        return True;
+                    else:
+                        time.sleep(self.wait_interval)
+
+            if not found:
+                self.fail_json(msg="unable to find server %s/%s" % (pxname, svname))
+
+        self.fail_json(msg="server %s/%s not status '%s' after %d retries. Aborting." % (pxname, svname, status, self.wait_retries))
+
+    def get_current_state(self, host, backend):
+        """
+        Gets the each original state value from show stat. 
+        Runs before and after to determine if values are changed. 
+        This relies on weight always being the next element after 
+        status in "show stat" as well as status states remaining
+        as indicated in status_states and haproxy documentation.
+        """
+   
+        output = self.execute('show stat')
+        output = output.lstrip('# ').strip()
+        output = output.split(',')
+        result = output
+        status_states = [ 'UP','DOWN','DRAIN','NOLB','MAINT' ]
+        self.status_server = []
+        status_weight_pos = []
+        self.status_weight = []
+
+        for check, status in enumerate(result):
+            if status in status_states:
+                self.status_server.append(status) 
+                status_weight_pos.append(check + 1) 
+
+        for weight in status_weight_pos:
+                self.status_weight.append(result[weight])
+
+        return{'self.status_server':self.status_server, 'self.status_weight':self.status_weight}
+
+    def enabled(self, host, backend, weight):
+        """
+        Enabled action, marks server to UP and checks are re-enabled,
+        also supports to get current weight for server (default) and
+        set the weight for haproxy backend server when provides.
+        """
+        svname = host
+        if self.backend is None:
+            output = self.execute('show stat')
+            #sanitize and make a list of lines
+            output = output.lstrip('# ').strip()
+            output = output.split('\n')
+            result = output
+
+            for line in result:
+                if 'BACKEND' in line:
+                    result =  line.split(',')[0]
+                    pxname = result
+                    cmd = "get weight %s/%s ; enable server %s/%s" % (pxname, svname, pxname, svname)
+                    if weight:
+                        cmd += "; set weight %s/%s %s" % (pxname, svname, weight)
+                    self.execute(cmd)
+                    if self.wait:
+                        self.wait_until_status(pxname, svname, 'UP')
+
+        else:
+            pxname = backend
+            cmd = "get weight %s/%s ; enable server %s/%s" % (pxname, svname, pxname, svname)
+            if weight:
+                cmd += "; set weight %s/%s %s" % (pxname, svname, weight)
+            self.execute(cmd)
+            if self.wait:
+                self.wait_until_status(pxname, svname, 'UP')
+
+    def disabled(self, host, backend, shutdown_sessions):
+        """
+        Disabled action, marks server to DOWN for maintenance. In this mode, no more checks will be
+        performed on the server until it leaves maintenance,
+        also it shutdown sessions while disabling backend host server.
+        """
+        svname = host
+        if self.backend is None:
+            output = self.execute('show stat')
+            #sanitize and make a list of lines
+            output = output.lstrip('# ').strip()
+            output = output.split('\n')
+            result = output
+
+            for line in result:
+                if 'BACKEND' in line:
+                    result =  line.split(',')[0]
+                    pxname = result
+                    cmd = "get weight %s/%s ; disable server %s/%s" % (pxname, svname, pxname, svname)
+                    if shutdown_sessions:
+                        cmd += "; shutdown sessions server %s/%s" % (pxname, svname)
+                    self.execute(cmd)
+                    if self.wait:
+                        self.wait_until_status(pxname, svname, 'MAINT')
+
+        else:
+            pxname = backend
+            cmd = "get weight %s/%s ; disable server %s/%s" % (pxname, svname, pxname, svname)
+            if shutdown_sessions:
+                cmd += "; shutdown sessions server %s/%s" % (pxname, svname)
+            self.execute(cmd)
+            if self.wait:
+                self.wait_until_status(pxname, svname, 'MAINT')
+
+    def exit_json(self, **kwargs):
+        ''' return from the module, without error '''
+        print json.dumps(kwargs)
+        sys.exit(0)
+ 
+    def fail_json(self, **kwargs):
+        ''' return from the module, with an error message '''
+        assert 'msg' in kwargs, "implementation error -- msg to explain the error is required"
+        kwargs['failed'] = True
+        print json.dumps(kwargs)
+        sys.exit(1)
+
+    def act(self):
+        """
+        Figure out what you want to do from haproxy socket, and then do it.
+        """
+
+        self.get_current_state(self.host, self.backend)
+        self.previous_states = ','.join(self.status_server)
+        self.previous_weights = ','.join(self.status_weight)
+
+        # toggle enable/disbale server
+        if self.state == 'enabled':
+            self.enabled(self.host, self.backend, self.weight)
+
+        elif self.state == 'disabled':
+            self.disabled(self.host, self.backend, self.shutdown_sessions)
+
+        elif self.state == 'health':
+            data = self.execute('show stat', 200, False).lstrip('# ')
+            r = csv.DictReader(data.splitlines())
+            found = False
+            for row in r:
+               if row['svname'] == self.host:
+                    found = True
+                    if row['status']:
+                        status = row['status']
+                        backend = row['pxname']
+                        weight = row['weight']
+                        print json.dumps({'status':'%s' % status, 'backend':'%s' % backend, 'host':'%s' % self.host, 'weight':'%s' % weight})
+
+            if found == False:
+               self.fail_json(msg="unknown host specified: '%s'" % self.host)
+            sys.exit(0)
+
+        else:
+            self.fail_json(msg="unknown state specified: '%s'" % self.state)
+
+        self.get_current_state(self.host, self.backend)
+        self.current_states = ','.join(self.status_server)
+        self.current_weights = ','.join(self.status_weight)
+
+        if self.current_weights != self.previous_weights:
+            self.exit_json(stdout=self.status_servers, changed=True)
+        elif self.current_states != self.previous_states:
+            self.exit_json(stdout=self.status_servers, changed=True)
+        else:
+            self.exit_json(stdout=self.status_servers, changed=False)
+
+
+if __name__ == '__main__':
+    HAProxy()
+
+
