@@ -18,7 +18,7 @@ HAManager is an interactive command line tiny tool to play and administrate hapr
      
 == Example
 
-   Its just simple to use, similar functionality of ansible custom haproxy module  - {haproxy}[https://github.com/ansible/ansible-modules-extras/blob/devel/network/haproxy.py]
+Its just simple to use, similar functionality of ansible custom haproxy module  - {haproxy}[https://github.com/ansible/ansible-modules-extras/blob/devel/network/haproxy.py]
 
 
   # checks the health of the server
@@ -58,11 +58,11 @@ HAManager are a work in progress, expect more documentation and examples in the 
 
 = ADDITIONAL RESOURCES
 
-*  http://haproxy.1wt.eu/download/1.5/doc/configuration.txt#Unix Socket commands
+*  {haproxy doc}[http://haproxy.1wt.eu/download/1.5/doc/configuration.txt#Unix Socket commands]
 
 = Maintener 
 
-Ravi Bhure <ravibhure@gmail.com> + (AnyOne who like to contribute)
+{Ravi Bhure}[www.ravibhure.com] + (AnyOne who like to contribute)
 
 = BUGS / FIXES
 
